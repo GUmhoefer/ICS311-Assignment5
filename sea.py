@@ -15,5 +15,7 @@ class Sea:
         self.adj[name] = []
 
     def add_route(self, origin, dest, time):
+        if origin not in self.adj:
+            self.add_island(origin)
         self.adj[origin].append(((dest, time)))
 
