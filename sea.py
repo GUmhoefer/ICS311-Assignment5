@@ -1,3 +1,5 @@
+import heapq
+
 class Sea:
     def __init__(self):
         self.islands = {}
