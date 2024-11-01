@@ -41,6 +41,8 @@ class Sea:
 
 
     def shortest_paths(self, origin):
+        avg_population = sum(island.pop for island in self.islands.values()) / len(self.islands)
+        k = 2 / avg_population # k is the scaling factor, where the 2 is to ensure the population has 50% influence on the next "shortest" (or best) path
         if origin not in self.adj:
             return f"{origin} is not an island in the routes"
         
@@ -57,7 +59,7 @@ class Sea:
                 continue
 
             for neighbor, time in self.adj[current_island].items():
-                distance = current_distance + time
+                distance = current_distance + time / (self.islands[neighbor].pop * k) 
 
                 if distance < distances[neighbor]:
                     distances[neighbor] = distance
