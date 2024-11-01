@@ -16,6 +16,7 @@ class Sea:
             self.last_visit = last_visit
             self.rare_shell = rare_shell
             self.resources = resources if resources else {}
+            self.parent = none
 
         def __str__(self):
             return (f"\nIsland: {self.name}\n"
@@ -46,6 +47,7 @@ class Sea:
         distances = {island: float('inf') for island in self.islands}
         distances[origin] = 0
         priority_queue = [(0, origin)]
+        shortest_paths = {island: [] for island in self.islands if island != origin}
 
         while priority_queue:
             current_distance, current_island = heappop(priority_queue)
@@ -59,6 +61,7 @@ class Sea:
                 if distance < distances[neighbor]:
                     distances[neighbor] = distance
                     heappush(priority_queue, (distance, neighbor))
+                    shortest_paths[neighbor] = shortest_paths[current_island] + [neighbor]
 
         return distances
 
