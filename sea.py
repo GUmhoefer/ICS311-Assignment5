@@ -1,4 +1,5 @@
 from heapq import heapify, heappop, heappush
+
 class Sea:
     def __init__(self, islands, routes):
         self.islands = {name: self.Island(name, **attributes) for name, attributes in islands.items()}
