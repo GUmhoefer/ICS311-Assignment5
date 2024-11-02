@@ -10,13 +10,13 @@ class Sea:
                 self.adj[origin][dest] = time
 
     class Island:
-        def __init__(self, name, pop = 500, last_visit = None, rare_shell=0, resources=None):
+        def __init__(self, name, pop = 500, last_visit = None, rare_shell=0, resources=None, resource_demand = 12):
             self.name = name # island name
             self.pop = pop # population
             self.last_visit = last_visit # last time the island was visited
             self.rare_shell = rare_shell
             self.resources = resources if resources else {} # resources on the island as a dictionary: {name, quantity}
-            self.parent = None
+            self.resource_demand = resource_demand # island's demand for a rare resourc
 
         def __str__(self):
             return (f"\nIsland: {self.name}\n"
@@ -40,7 +40,7 @@ class Sea:
                 print(f"From {origin} to {dest} takes {time}")
 
 
-    def shortest_paths(self, origin):
+    def shortest_path(self, origin):
         """
         Compute the shortest paths from the origin island to all other islands using Dijkstra's algorithm.
 
@@ -48,8 +48,11 @@ class Sea:
             origin (str): The name of the origin island.
 
         Returns:
-            dict: A dictionary with islands as keys and tuples (distance, path) as values.
+            distances (dict): The shortest distances to each island from the origin.
+            shortest_paths (dict): The shortest paths to each island from the origin.
         """
+        print("Running shortest path")
+
         if origin not in self.adj:
             return f"{origin} is not an island in the routes"
         
@@ -82,7 +85,7 @@ class Sea:
                     shortest_paths[neighbor] = shortest_paths[current_island] + [neighbor]
 
         # Return the shortest distances and paths to each island
-        return {island: (distances[island], shortest_paths[island]) for island in self.islands}
+        return distances, shortest_paths
     
 
     def next_best_island(self, current_island, current_time, alpha=5, k_factor=2):
@@ -204,6 +207,132 @@ class Sea:
 
         # Print the full path taken
         print("\nPath taken across islands:", " -> ".join(path))
+    
+    def resource_distribution_path(self, origin, max_overlap):
+        distances, path_dict = self.shortest_path(origin)
+        all_paths = [path for path in path_dict.values()]
+
+        # Sort shortest paths by decreasing number of islands in the path
+        sorted_paths = self.sort_paths(all_paths, 0, len(all_paths) - 1)
+
+        # Create a set to store islands that will be visited in optimal route
+        islands_visited = set()
+
+        # Create a list to store the optimal paths
+        optimal_paths = []
+
+        # Iterate through the sorted from longest to shortest
+        for path in sorted_paths:
+
+            # Create a set from the path for set operations
+            path_set = set(path)
+
+            # Calculate ratio of overlap between path and visited islands
+            ratio = len(path_set.intersection(islands_visited)) / len(path_set)
+
+            # Allow only a certain amount of overlap between paths chosen to
+            # avoid revisiting too many islands, while maximising coverage.
+            if ratio < max_overlap:
+
+                # Add the path to the optimal paths
+                optimal_paths.append(path)
+
+                # Update the visited islands set
+                islands_visited.update(path_set)
+
+        return optimal_paths, islands_visited
+    
+    def canoe_distribution(self, origin, canoe_capacity = 30, max_overlap = .5):
+        optimal_paths, islands_visited = self.resource_distribution_path(origin, max_overlap)
+        distribution_time = 0
+        canoe_count = 0
+
+        for path in optimal_paths:
+
+            current_time = 0
+            canoe_demand = 0
+
+            for i in range(len(path)):
+                first = path[i]
+
+                if canoe_demand + self.islands[first].resource_demand <= canoe_capacity:
+                    canoe_demand += self.islands[first].resource_demand
+                    self.islands[first].resource_demand = 0
+
+                else: 
+
+                    # Send canoe with exactly enough resources to meet the demands for 
+                    # the islands so far. Start loading new canoe with resources for the 
+                    # current island.
+                    canoe_count += 1
+                    canoe_demand = self.islands[first].resource_demand
+                    self.islands[first].resource_demand = 0
+                
+                # If current island is not the last island in the path, add travel time to next island
+                if i < len(path) - 1:
+                    second = path[i + 1]
+                    current_time += self.adj[first][second]
+
+            # Determine if the current path time is longer than any previous path times
+            if current_time > distribution_time:
+                distribution_time = current_time
+
+        return canoe_count, distribution_time, islands_visited
+    
+    def sort_paths(self, paths, begin, end):
+        if begin >= end:
+            # Base case if list has 1 or fewer elements
+            return paths
+        mid = (begin + end) // 2 # Finds middle of list
+        self.sort_paths(paths, begin, mid)
+        self.sort_paths(paths, mid + 1, end)
+
+        # Merge left and right lists
+        return self.merge(paths, begin, mid, end)
+    
+    def merge(self, paths, begin, mid, end):
+        # Sets the number of elements in the left and right lists
+        num_left = mid - begin + 1
+        num_right = end - mid
+
+        # Creates two arrays for the left and right lists
+        left = [0] * num_left
+        right = [0] * num_right
+
+        # Fills the new left and right arrays with the paths from the original array
+        for i in range(0, num_left):
+            left[i] = paths[begin + i]
+        for j in range(0, num_right):
+            right[j] = paths[mid + j + 1]
+        
+        # Sets start indices for left, right, and original lists
+        i = 0
+        j = 0
+        k = begin
+
+        while i < num_left and j < num_right:
+            if len(left[i]) <= len(right[j]):
+                paths[k] = left[i] # Adds the left list's path to the original array if it is longer than the right path
+                i += 1 # Increments to next left path
+            else:
+                paths[k] = right[j] # Adds the right path to the original array if it is is less than the left path
+                j += 1 # Increments index to next right path
+            k += 1 # Increments the position in the original array
+
+        # After one of the L or R lists is empty, adds the rest of the other list to the original array
+        while i < num_left:
+            paths[k] = left[i]
+            i += 1
+            k += 1
+        
+        while j < num_right:
+            paths[k] = right[j]
+            j += 1
+            k += 1
+
+        return paths
+
+    # Testing methods for Sea class
     def find_route(self, origin, dest):
         if origin not in self.adj:
             return f"{origin} is not an island in the routes"
