@@ -2,21 +2,35 @@ from heapq import heapify, heappop, heappush
 
 class Sea:
     def __init__(self, islands, routes):
+        # Initialize islands from provided data
         self.islands = {name: self.Island(name, **attributes) for name, attributes in islands.items()}
         self.adj = {name: {} for name in islands}
-        
+
+        # Populate adjacency list and add missing islands if needed
         for origin, dest, time in routes:
-            if origin in self.adj and dest in self.adj:
-                self.adj[origin][dest] = time
+            # Ensure origin and dest exist in islands and adjacency list
+            if origin not in self.islands:
+                self.islands[origin] = self.Island(name=origin)
+            if dest not in self.islands:
+                self.islands[dest] = self.Island(name=dest)
+            
+            # Ensure both are also in the adjacency list
+            if origin not in self.adj:
+                self.adj[origin] = {}
+            if dest not in self.adj:
+                self.adj[dest] = {}
+
+            # Add the route
+            self.adj[origin][dest] = time
 
     class Island:
-        def __init__(self, name, pop = 500, last_visit = None, rare_shell=0, resources=None):
+        def __init__(self, name, pop = 500, last_visit = 0, rare_shell=0, resources=None, resource_demand = 12):
             self.name = name # island name
             self.pop = pop # population
             self.last_visit = last_visit # last time the island was visited
             self.rare_shell = rare_shell
             self.resources = resources if resources else {} # resources on the island as a dictionary: {name, quantity}
-            self.parent = None
+            self.resource_demand = resource_demand # island's demand for a rare resourc
 
         def __str__(self):
             return (f"\nIsland: {self.name}\n"
@@ -25,7 +39,7 @@ class Sea:
                     f"Rare shell: {self.rare_shell}\n"
                     f"Resources: {self.resources}\n\n")
 
-    def add_island(self, name, pop = 500, last_visit = None, rare_shell=0, resources=None):
+    def add_island(self, name, pop = 500, last_visit = 0, rare_shell=0, resources=None):
         self.islands[name] = self.Island(name, pop, last_visit, rare_shell)
         self.adj[name] = {}
 
@@ -40,7 +54,7 @@ class Sea:
                 print(f"From {origin} to {dest} takes {time}")
 
 
-    def shortest_paths(self, origin):
+    def shortest_path(self, origin):
         """
         Compute the shortest paths from the origin island to all other islands using Dijkstra's algorithm.
 
@@ -48,8 +62,11 @@ class Sea:
             origin (str): The name of the origin island.
 
         Returns:
-            dict: A dictionary with islands as keys and tuples (distance, path) as values.
+            distances (dict): The shortest distances to each island from the origin.
+            shortest_paths (dict): The shortest paths to each island from the origin.
         """
+        print("Running shortest path")
+
         if origin not in self.adj:
             return f"{origin} is not an island in the routes"
         
@@ -82,92 +99,89 @@ class Sea:
                     shortest_paths[neighbor] = shortest_paths[current_island] + [neighbor]
 
         # Return the shortest distances and paths to each island
-        return {island: (distances[island], shortest_paths[island]) for island in self.islands}
+        return distances, shortest_paths
     
 
-    def next_best_island(self, current_island, current_time, alpha=5, k_factor=2):
+    def next_best_island_greedy(self, current_island, current_time, alpha=5, k_factor=2):
         """
-        Find the next best island to visit, given the current island, current time, and control factors.
+        Greedy approach to find the next best directly connected island to visit.
+        Ensures last visit time updates correctly to influence recency penalty.
 
         Args:
-            current_island (str): The name of the current island.
+            current_island (str): The current island.
             current_time (int): The current time.
-            alpha (int, optional): The control factor for the recency penalty. Defaults to 5 (larger value means revisits are more strongly discouraged).
-            k_factor (int, optional): The scaling factor for the population. Defaults to 2 (larger value means larger populations have more influence on the next best island).
+            alpha (int): Recency penalty control factor.
+            k_factor (int): Population scaling factor.
+
         Returns:
-            dict: A dictionary containing the next best island, the last visited island, and the last visit time.
+            dict: Contains the next best island, last visited island, last visit time, and travel time.
         """
         avg_population = sum(island.pop for island in self.islands.values()) / len(self.islands)
         k = k_factor / avg_population
-        
-        if current_island not in self.adj:
-            return f"{current_island} is not an island in the routes"
-        
-        distances = {island: float('inf') for island in self.islands}
-        distances[current_island] = 0
-        priority_queue = [(0, current_island)]
-        self.islands[current_island].last_visit = current_time
 
-        last_visited = current_island
-        last_visit_time = current_time
+        # Initialize variables to track the best neighboring island
         next_island = None
+        min_effective_distance = float('inf')
+        travel_time = 0
 
-        while priority_queue:
-            current_distance, current_island = heappop(priority_queue)
-            
-            # Update last visited information
-            last_visited = current_island
-            last_visit_time = current_time
+        print(f"\nEvaluating neighbors for {current_island} at time {current_time}")
 
-            if current_distance > distances[current_island]:
-                continue
+        # Consider only direct neighbors of the current island
+        for neighbor, time in self.adj[current_island].items():
+            last_visit_neighbor = self.islands[neighbor].last_visit
+            time_since_last_visit = current_time - last_visit_neighbor + 1
+            recency_penalty = alpha / time_since_last_visit
 
-            # Look for the next best island
-            for neighbor, travel_time in self.adj[current_island].items():
-                last_visit_neighbor = self.islands[neighbor].last_visit or 0
-                recency_penalty = 1 / (current_time - last_visit_neighbor + 1)
-                # Compute the effective distance using population scaling factor and recency penalty
-                effective_distance = current_distance + travel_time / (self.islands[neighbor].pop * k) + alpha * recency_penalty 
-                
-                if effective_distance < distances[neighbor]:
-                    distances[neighbor] = effective_distance
-                    heappush(priority_queue, (effective_distance, neighbor))
-                    
-                    # Select this neighbor as the next island to visit
-                    next_island = neighbor
-                    current_time += travel_time  # Update time after traveling to the neighbor (thus, higher times mean more recent times)
-                    # Update last_visit for the current island before moving on
-                    self.islands[current_island].last_visit = current_time
-                    break  # Stop after finding the next best island
+            # Effective distance includes travel time, population scaling, and recency penalty
+            effective_distance = time / (self.islands[neighbor].pop * k) + recency_penalty
 
-            # Exit the loop early after selecting the next island
-            if next_island:
-                break
+            # Debug print statements to observe the impact of each component
+            print(f"  Neighbor: {neighbor}")
+            print(f"    Travel time: {time}")
+            print(f"    Population: {self.islands[neighbor].pop}")
+            print(f"    Last visit time: {last_visit_neighbor}")
+            print(f"    Time since last visit: {time_since_last_visit}")
+            print(f"    Recency penalty (alpha / time since last visit): {recency_penalty}")
+            print(f"    Effective distance: {effective_distance}")
 
-        # Return the next best island, the last visited island, and the last visit time as dictionary of strings
+            # Select the neighbor with the minimum effective distance
+            if effective_distance < min_effective_distance:
+                min_effective_distance = effective_distance
+                next_island = neighbor
+                travel_time = time  # Update travel time for the chosen next island
+
+        # Update the last visit time for both the current island and the next island
+        if next_island:
+            # Update last visit time for the current island before moving
+            self.islands[current_island].last_visit = current_time
+            # Update time to reflect travel to next island
+            current_time += travel_time
+            # Set last visit time of the chosen island to the updated current time
+            self.islands[next_island].last_visit = current_time
+
         return {
             "next_island": next_island,
-            "last_visited": last_visited,
-            "last_visit_time": last_visit_time
+            "last_visited": current_island,
+            "last_visit_time": current_time,
+            "travel_time": travel_time
         }
 
-    def n_next_best_islands(sea, origin, iterations=15):
-        """
-        Given a Sea object and an origin island, find the next best island to visit
-        for a given number of iterations (trips between islands).
 
-        The algorithm (next_best_island)takes into account the population of the islands and the
-        recency of the last visit to each island when determining the next best
-        island to visit.
+
+
+    def n_next_best_islands_greedy(self, origin, iterations=15, alpha=50, k_factor=2):
+        """
+        Finds the sequence of next best islands to visit using the greedy approach with limited lookahead.
+        Displays last visit times on each iteration.
 
         Args:
-            sea (Sea): The Sea object to use for the algorithm
-            origin (str): The origin island to start at
-            iterations (int, optional): The number of iterations to run the
-                algorithm for. Defaults to 15.
+            origin (str): The starting island.
+            iterations (int): Number of moves to find the next best islands.
+            alpha (int): Recency penalty control factor.
+            k_factor (int): Population scaling factor.
 
         Returns:
-            A list of the next best islands to visit in order
+            list: The ordered list of islands in the visitation path.
         """
         current_time = 0
         path = []
@@ -175,35 +189,155 @@ class Sea:
 
         for i in range(iterations):
             print(f"\n--- Iteration {i+1} ---")
-            result = sea.next_best_island(current_island, current_time)
             
-            next_island = result["next_island"] 
-            last_visited = result["last_visited"]
-            last_visit_time = result["last_visit_time"]
+            # Find the next best island based on the greedy approach
+            result = self.next_best_island_greedy(current_island, current_time, alpha, k_factor)
+            next_island = result["next_island"]
+            travel_time = result["travel_time"]
 
             if next_island is None:
                 print("No more reachable islands.")
                 break
 
-            # Print the results for this iteration
-            print(f"Current Island: {current_island}")
-            print(f"Next Island to Visit: {next_island}")
-            print(f"Last Visited Island: {last_visited}")
-            print(f"Last Visit Time: {last_visit_time}")
-
-            # Append the path for visualization
-            path.append(next_island)
-
-            # Update current_time and move to the next island
-            travel_time = sea.adj[current_island].get(next_island, 0)
+            # Update the last visit time for the selected next island
             current_time += travel_time
-            sea.islands[current_island].last_visit = current_time
+            self.islands[next_island].last_visit = current_time
 
-            # Move to the next island
+            # Update path and current state
+            path.append(next_island)
             current_island = next_island
 
-        # Print the full path taken
-        print("\nPath taken across islands:", " -> ".join(path))
+            # Print the path up to this point
+            print(f"Path so far: {' -> '.join(path)}")
+
+        print("\nFinal path taken across islands:", " -> ".join(path))
+        return path
+    
+    def resource_distribution_path(self, origin, max_overlap):
+        distances, path_dict = self.shortest_path(origin)
+        all_paths = [path for path in path_dict.values()]
+
+        # Sort shortest paths by decreasing number of islands in the path
+        sorted_paths = self.sort_paths(all_paths, 0, len(all_paths) - 1)
+
+        # Create a set to store islands that will be visited in optimal route
+        islands_visited = set()
+
+        # Create a list to store the optimal paths
+        optimal_paths = []
+
+        # Iterate through the sorted from longest to shortest
+        for path in sorted_paths:
+
+            # Create a set from the path for set operations
+            path_set = set(path)
+
+            # Calculate ratio of overlap between path and visited islands
+            ratio = len(path_set.intersection(islands_visited)) / len(path_set)
+
+            # Allow only a certain amount of overlap between paths chosen to
+            # avoid revisiting too many islands, while maximising coverage.
+            if ratio < max_overlap:
+
+                # Add the path to the optimal paths
+                optimal_paths.append(path)
+
+                # Update the visited islands set
+                islands_visited.update(path_set)
+
+        return optimal_paths, islands_visited
+    
+    def canoe_distribution(self, origin, canoe_capacity = 30, max_overlap = .5):
+        optimal_paths, islands_visited = self.resource_distribution_path(origin, max_overlap)
+        distribution_time = 0
+        canoe_count = 0
+
+        for path in optimal_paths:
+
+            current_time = 0
+            canoe_demand = 0
+
+            for i in range(len(path)):
+                first = path[i]
+
+                if canoe_demand + self.islands[first].resource_demand <= canoe_capacity:
+                    canoe_demand += self.islands[first].resource_demand
+                    self.islands[first].resource_demand = 0
+
+                else: 
+
+                    # Send canoe with exactly enough resources to meet the demands for 
+                    # the islands so far. Start loading new canoe with resources for the 
+                    # current island.
+                    canoe_count += 1
+                    canoe_demand = self.islands[first].resource_demand
+                    self.islands[first].resource_demand = 0
+                
+                # If current island is not the last island in the path, add travel time to next island
+                if i < len(path) - 1:
+                    second = path[i + 1]
+                    current_time += self.adj[first][second]
+
+            # Determine if the current path time is longer than any previous path times
+            if current_time > distribution_time:
+                distribution_time = current_time
+
+        return canoe_count, distribution_time, islands_visited
+    
+    def sort_paths(self, paths, begin, end):
+        if begin >= end:
+            # Base case if list has 1 or fewer elements
+            return paths
+        mid = (begin + end) // 2 # Finds middle of list
+        self.sort_paths(paths, begin, mid)
+        self.sort_paths(paths, mid + 1, end)
+
+        # Merge left and right lists
+        return self.merge(paths, begin, mid, end)
+    
+    def merge(self, paths, begin, mid, end):
+        # Sets the number of elements in the left and right lists
+        num_left = mid - begin + 1
+        num_right = end - mid
+
+        # Creates two arrays for the left and right lists
+        left = [0] * num_left
+        right = [0] * num_right
+
+        # Fills the new left and right arrays with the paths from the original array
+        for i in range(0, num_left):
+            left[i] = paths[begin + i]
+        for j in range(0, num_right):
+            right[j] = paths[mid + j + 1]
+        
+        # Sets start indices for left, right, and original lists
+        i = 0
+        j = 0
+        k = begin
+
+        while i < num_left and j < num_right:
+            if len(left[i]) <= len(right[j]):
+                paths[k] = left[i] # Adds the left list's path to the original array if it is longer than the right path
+                i += 1 # Increments to next left path
+            else:
+                paths[k] = right[j] # Adds the right path to the original array if it is is less than the left path
+                j += 1 # Increments index to next right path
+            k += 1 # Increments the position in the original array
+
+        # After one of the L or R lists is empty, adds the rest of the other list to the original array
+        while i < num_left:
+            paths[k] = left[i]
+            i += 1
+            k += 1
+        
+        while j < num_right:
+            paths[k] = right[j]
+            j += 1
+            k += 1
+
+        return paths
+
+    # Testing methods for Sea class
     def find_route(self, origin, dest):
         if origin not in self.adj:
             return f"{origin} is not an island in the routes"
