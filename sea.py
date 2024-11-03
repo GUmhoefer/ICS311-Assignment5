@@ -206,7 +206,7 @@ class Sea:
             # Update path and current state
             path.append(next_island)
             current_island = next_island
-
+            
             # Print the path up to this point
             print(f"Path so far: {' -> '.join(path)}")
 
