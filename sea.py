@@ -24,30 +24,17 @@ class Sea:
             self.adj[origin][dest] = time
 
     class Island:
-        def __init__(self, name, pop = 500, last_visit = 0, rare_shell=0, resources=None, resource_demand = 12):
+        def __init__(self, name, pop = 500, last_visit = 0, resource_demand = 12):
             self.name = name # island name
             self.pop = pop # population
             self.last_visit = last_visit # last time the island was visited
-            self.rare_shell = rare_shell
-            self.resources = resources if resources else {} # resources on the island as a dictionary: {name, quantity}
-            self.resource_demand = resource_demand # island's demand for a rare resourc
+            self.resource_demand = resource_demand # island's demand for a rare resource
 
         def __str__(self):
             return (f"\nIsland: {self.name}\n"
                     f"Population: {self.pop}\n"
                     f"Last visit: {self.last_visit}\n"
-                    f"Rare shell: {self.rare_shell}\n"
-                    f"Resources: {self.resources}\n\n"
                     f"Resource demand: {self.resource_demand}\n")
-
-    def add_island(self, name, pop = 500, last_visit = 0, rare_shell=0, resources=None):
-        self.islands[name] = self.Island(name, pop, last_visit, rare_shell)
-        self.adj[name] = {}
-
-    def add_route(self, origin, dest, time):
-        if origin not in self.adj:
-            self.add_island(origin)
-        self.adj[origin][dest] = time
 
     def print_routes(self):
         for origin in self.adj:
@@ -167,8 +154,6 @@ class Sea:
         }
 
 
-
-
     def n_next_best_islands_greedy(self, origin, iterations=15, alpha=50, k_factor=2):
         """
         Finds the sequence of next best islands to visit using the greedy approach with limited lookahead.
@@ -213,27 +198,30 @@ class Sea:
         print("\nFinal path taken across islands:", " -> ".join(path))
         return path
     
-    def resource_distribution_path(self, origin, max_overlap, alpha, beta):
-        # distances, path_dict = self.shortest_path(origin)
-        # all_paths = [path for path in path_dict.values()]
+    def resource_distribution_path(self, origin, max_overlap = .7):
+        """
+        Finds an optimal combination of paths to deliver to the most islands based on the number of islands in the path and its total time.
 
+        Args:
+            origin (str): The starting island.
+            max_overlap (float): Maximum overlap fraction allowed between paths for a path to be selected. (0 to 1)
+
+        Returns:
+            list: A list containing lists of island sequences in optimal paths chosen.
+        """
+
+        # Finds the shortest paths from the origin to all other islands
         paths = self.shortest_path(origin)
 
-        # Sort paths by decreasing optimal value
-        # Optimal value = a * 1/total_time + b * unique_islands
-        sorted_paths = self.sort_paths(paths, 0, len(paths) - 1, alpha, beta)
-
-        # sorted_paths = paths
-
-        # # Sort shortest paths by decreasing number of islands in the path
-        # sorted_paths = self.sort_paths(all_paths, 0, len(all_paths) - 1)
+        # Sort paths by ascending order of travel time. 
+        sorted_paths = self.sort_paths(paths, 0, len(paths) - 1)
 
         # Create a set to store islands that will be visited in optimal route
-        islands_visited = set()
+        islands_visited = set(origin)
 
         # Create a list to store the optimal paths
         optimal_paths = []
-
+        
         # Iterate through the sorted from longest to shortest
         for path in sorted_paths:
 
@@ -253,67 +241,117 @@ class Sea:
                 # Update the visited islands set
                 islands_visited.update(path_set)
             
-        return optimal_paths, sorted_paths
+        return optimal_paths
     
-    def canoe_distribution(self, origin, max_overlap = .6, alpha = .1, beta = .0001):
-        canoe_capacity = 30
-        best_paths, sort = self.resource_distribution_path(origin, max_overlap, alpha, beta)
+    def canoe_distribution(self, origin, max_overlap = .7, canoe_capacity = 30):
+        """
+        Assigns canoes to deliver resources to sets of islands along the optimal shortest routes.
+
+        Args:
+            origin (str): The starting island that is the source of the rare resources.
+            max_overlap (float): Maximum overlap fraction allowed between paths for a path to be selected. (0 to 1)
+            canoe_capacity (int): The maximum amount of resources that a canoe can carry. Starts at 0, and are incremented
+                by the demand of islands along a path until the capacity is reached, and the canoe is dispatched to 
+                deliver to those islands.
+
+        Returns:
+            canoe_count: The number of canoes dispatched to cover deliveries.
+            distribution_time: The total time taken for canoes to deliver resources.
+            islands_delivered: A set of islands that received resources.
+        """
+        
+        # Calculate the best paths to plan canoe routes, set current distribution time to 0
+        best_paths = self.resource_distribution_path(origin, max_overlap)
         distribution_time = 0
-        canoe_count = 0
-        islands_delivered = set()
+        islands_delivered = 0
+
+        # Set origin island's demand to 0
+        self.islands[origin].resource_demand = 0
+        
+        # Start with 1 canoe with load of 0
+        canoe_count = 1
+        canoe_load = 0
 
         for path in best_paths:
-
+            
+            # Initialise variables for current path
+            
             current_time = 0
-            canoe_load = 0
 
             for i in range(len(path)):
                 first = path[i]
+    
+                # If the current island has demand, load its demand into the canoe
+                if self.islands[first].resource_demand > 0:
 
-                if first not in islands_delivered:
-                    islands_delivered.add(first)
+                    # Increment the number of islands delivered to
+                    islands_delivered += 1
 
-                if canoe_load + self.islands[first].resource_demand <= canoe_capacity:
-                    canoe_load += self.islands[first].resource_demand
-                    self.islands[first].resource_demand = 0
+                    # Load canoe with enough for the current island, if the canoe has the capacity
+                    # and set island's demand to 0 as it will be fulfilled.
+                    if (canoe_load + self.islands[first].resource_demand <= canoe_capacity):
+                        canoe_load += self.islands[first].resource_demand
+                        self.islands[first].resource_demand = 0
 
-                else: 
+                    else:
 
-                    # Send canoe with exactly enough resources to meet the demands for 
-                    # the islands so far. Start loading new canoe with resources for the 
-                    # current island.
-                    canoe_count += 1
-                    canoe_load = self.islands[first].resource_demand
-                    self.islands[first].resource_demand = 0
+                        # Send canoe with exactly enough resources to meet the demands for 
+                        # the islands so far. Start loading new canoe with resources for the 
+                        # current island.
+                        canoe_count += 1
+                        canoe_load = self.islands[first].resource_demand
+                        self.islands[first].resource_demand = 0
                 
                 # If current island is not the last island in the path, add travel time to next island
                 if i < len(path) - 1:
+                    # Add travel time to next island
                     second = path[i + 1]
                     current_time += self.adj[first][second]
+                else:
+                    # If the current island is the last island in the path, start a new canoe
+                    canoe_load = 0
+                    canoe_count += 1
 
-            # Determine if the current path time is longer than any previous path times
+            # Determine if the current path's time is longer than any previous path times
             if current_time > distribution_time:
                 distribution_time = current_time
 
         return canoe_count, distribution_time, islands_delivered
-    
-    def calc_path_score(self, path, alpha, beta):
-        score = alpha * (1/path[0]) + beta * len(path[1])
-        # score = (beta * len(path[1])) / (alpha * path[0])
-        return score
 
-    def sort_paths(self, paths, begin, end, alpha, beta):
+    def sort_paths(self, paths, begin, end):
+        """
+        Sorts a list of paths in ascending order by distance.
+
+        Args:
+            paths (list): A list of paths to be sorted.
+            begin (int): The starting index of the list.
+            end (int): The ending index of the list.
+
+        Returns:
+            list: The sorted list of paths.
+        """
         if begin >= end:
             # Base case if list has 1 or fewer elements
             return paths
         mid = (begin + end) // 2 # Finds middle of list
-        self.sort_paths(paths, begin, mid, alpha, beta)
-        self.sort_paths(paths, mid + 1, end, alpha, beta)
+        self.sort_paths(paths, begin, mid)
+        self.sort_paths(paths, mid + 1, end)
 
         # Merge left and right lists
-        return self.merge(paths, begin, mid, end, alpha, beta)
+        return self.merge(paths, begin, mid, end)
     
-    def merge(self, paths, begin, mid, end, alpha, beta):
+    def merge(self, paths, begin, mid, end):
+        """
+        Merges the recursively subdivided lists of paths back together in sorted order.
+
+        Args:
+            paths (list): A list of paths to be sorted.
+            begin (int): The starting index of the list.
+            end (int): The ending index of the list.
+
+        Returns:
+            list: The sorted sub list of paths.
+        """
         # Sets the number of elements in the left and right lists
         num_left = mid - begin + 1
         num_right = end - mid
@@ -333,21 +371,12 @@ class Sea:
         j = 0
         k = begin
 
-        # while i < num_left and j < num_right:
-        #     if len(left[i][1]) <= len(right[j][1]):
-        #         paths[k] = left[i] # Adds the left list's path to the original array if it is longer than the right path
-        #         i += 1 # Increments to next left path
-        #     else:
-        #         paths[k] = right[j] # Adds the right path to the original array if it is is less than the left path
-        #         j += 1 # Increments index to next right path
-        #     k += 1 # Increments the position in the original array
-
         while i < num_left and j < num_right:
-            if self.calc_path_score(left[i], alpha, beta) <= self.calc_path_score(right[j], alpha, beta):
-                paths[k] = left[i] # Adds the left list's path to the original array if it is longer than the right path
+            if left[i][0] <= right[j][0]:
+                paths[k] = left[i] # Adds the left list's path to the original array if it is shorter than the right path
                 i += 1 # Increments to next left path
             else:
-                paths[k] = right[j] # Adds the right path to the original array if it is is less than the left path
+                paths[k] = right[j] # Adds the right path to the original array if it is is shorter than the left path
                 j += 1 # Increments index to next right path
             k += 1 # Increments the position in the original array
 
