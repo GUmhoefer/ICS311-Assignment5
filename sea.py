@@ -122,14 +122,14 @@ class Sea:
             # Effective distance includes travel time, population scaling, and recency penalty
             effective_distance = time / (self.islands[neighbor].pop * k) + recency_penalty
 
-            # Debug print statements to observe the impact of each component
-            print(f"  Neighbor: {neighbor}")
-            print(f"    Travel time: {time}")
-            print(f"    Population: {self.islands[neighbor].pop}")
-            print(f"    Last visit time: {last_visit_neighbor}")
-            print(f"    Time since last visit: {time_since_last_visit}")
-            print(f"    Recency penalty (alpha / time since last visit): {recency_penalty}")
-            print(f"    Effective distance: {effective_distance}")
+            # # Debug print statements to observe the impact of each component
+            # print(f"  Neighbor: {neighbor}")
+            # print(f"    Travel time: {time}")
+            # print(f"    Population: {self.islands[neighbor].pop}")
+            # print(f"    Last visit time: {last_visit_neighbor}")
+            # print(f"    Time since last visit: {time_since_last_visit}")
+            # print(f"    Recency penalty (alpha / time since last visit): {recency_penalty}")
+            # print(f"    Effective distance: {effective_distance}")
 
             # Select the neighbor with the minimum effective distance
             if effective_distance < min_effective_distance:
